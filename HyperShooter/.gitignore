@@ -73,3 +73,8 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+# Custom
+HyperShooter/Content/HyperShooter/Assets/*
+HyperShooter/Content/HyperShooter/UI/Assets/*
+HyperShooter/Content/HyperShooter/Level/InfinityBladeGrassLands/*
