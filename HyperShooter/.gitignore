@@ -75,6 +75,6 @@ Plugins/**/Intermediate/*
 DerivedDataCache/*
 
 # Custom
-HyperShooter/Content/HyperShooter/Assets/*
-HyperShooter/Content/HyperShooter/UI/Assets/*
-HyperShooter/Content/HyperShooter/Level/InfinityBladeGrassLands/*
+Content/HyperShooter/Assets/*
+Content/HyperShooter/UI/Assets/*
+Content/HyperShooter/Level/InfinityBladeGrassLands/*
