@@ -17,6 +17,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Component/HSCharacterStatusComponent.h"
 #include "Component/HSCameraModeComponent.h"
+#include "Component/HSWeaponComponent.h"
 #include "Engine/DamageEvents.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
@@ -58,7 +59,7 @@ AHyperShooterCharacter::AHyperShooterCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom and let the boom adjust to match the controller orientation
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
-	CurrentWeapon = nullptr;
+	WeaponComponent = nullptr;
 
 	// Note: The skeletal mesh and anim blueprint references on the Mesh component (inherited from Character) 
 	// are set in the derived blueprint asset named ThirdPersonCharacter (to avoid direct content references in C++)
@@ -66,6 +67,9 @@ AHyperShooterCharacter::AHyperShooterCharacter()
 	StatusComponent = CreateDefaultSubobject<UHSCharacterStatusComponent>(FName("StatusComponent"));
 
 	CameraModeComponent = CreateDefaultSubobject<UHSCameraModeComponent>(FName("CameraModeComponent"));
+
+	WeaponComponent = CreateDefaultSubobject<UHSWeaponComponent>(FName("WeaponComponent"));
+	WeaponComponent->AttachToComponent(GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, FName("weapon_r"));
 }
 
 void AHyperShooterCharacter::BeginPlay()
@@ -82,16 +86,13 @@ void AHyperShooterCharacter::BeginPlay()
 		}
 	}
 
-	SpawnDefaultWeapon_Server();
+	WeaponComponent->Delegate_OnWeaponUpdated.AddUObject(this, &AHyperShooterCharacter::WeaponInfoUpdated);
+
+	UpdateWeaponInfo_Server(DefaultWeaponData);
 }
 
 void AHyperShooterCharacter::Destroyed()
 {
-	if (CurrentWeapon)
-	{
-		CurrentWeapon->Destroy();
-	}
-
 	Super::Destroy();
 }
 
@@ -99,7 +100,7 @@ void AHyperShooterCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
-	DOREPLIFETIME(AHyperShooterCharacter, CurrentWeapon);
+	DOREPLIFETIME(AHyperShooterCharacter, WeaponComponent);
 	DOREPLIFETIME(AHyperShooterCharacter, StatusComponent);
 }
 
@@ -152,61 +153,34 @@ float AHyperShooterCharacter::TakeDamage(float Damage, FDamageEvent const& Damag
 	return Damage;
 }
 
-void AHyperShooterCharacter::PlayMontage_Multicast_Implementation(UAnimMontage* InMontage)
+void AHyperShooterCharacter::WeaponInfoUpdated()
 {
-	PlayAnimMontage(InMontage);
-}
-
-void AHyperShooterCharacter::SpawnDefaultWeapon_Server_Implementation()
-{
-	if (!CurrentWeapon)
-	{
-		CurrentWeapon = Cast<AHSWeaponBase>(GetWorld()->SpawnActor<AActor>(DefaultWeaponClass));
-		if (CurrentWeapon)
-		{
-			CurrentWeapon->AttachWeaponToCharacter(this);
-
-			if (IsLocallyControlled())
-			{
-				CurrentWeapon->Delegate_OnAmmoUpdated.AddUObject(this, &AHyperShooterCharacter::OnAmmoUpdated);
-				CurrentWeapon->Delegate_OnTargetHit.AddUObject(this, &AHyperShooterCharacter::OnFireHit);
-			}
-		}
-
-		UpdateWeaponInfo_Server(DefaultWeaponData);
-
-		OnRep_CurrentWeapon();
-	}
-}
-
-void AHyperShooterCharacter::UpdateWeaponInfo_Server_Implementation(UHSWeaponData* InWeaponData)
-{
-	if (CurrentWeapon && InWeaponData)
-	{
-		CurrentWeapon->UpdateWeaponInfo_Server(InWeaponData);
-
-		GetMesh()->GetAnimInstance()->LinkAnimClassLayers(InWeaponData->CharacterAnimClass);
-		PlayMontage_Multicast(InWeaponData->CharacterEquipMontage);
-	}
-}
-
-void AHyperShooterCharacter::OnRep_CurrentWeapon()
-{
-	if (CurrentWeapon)
+	if (IsLocallyControlled())
 	{
 		APlayerController* PC = Cast<APlayerController>(GetController());
-		HUDWidget = CreateWidget<UWidget_HUD>(PC, CurrentWeapon->GetHUDClass());
+		HUDWidget = CreateWidget<UWidget_HUD>(PC, WeaponComponent->GetHUDClass());
 		if (HUDWidget)
 		{
 			HUDWidget->AddToViewport();
 		}
 
-		CurrentWeapon->AttachWeaponToCharacter(this);
+		WeaponComponent->Delegate_OnTargetHit.AddUObject(this, &AHyperShooterCharacter::OnFireHit);
+	}
+}
 
-		if (IsLocallyControlled())
-		{
-			CurrentWeapon->Delegate_OnTargetHit.AddUObject(this, &AHyperShooterCharacter::OnFireHit);
-		}
+void AHyperShooterCharacter::PlayMontage_Multicast_Implementation(UAnimMontage* InMontage)
+{
+	PlayAnimMontage(InMontage);
+}
+
+void AHyperShooterCharacter::UpdateWeaponInfo_Server_Implementation(UHSWeaponData* InWeaponData)
+{
+	if (WeaponComponent && InWeaponData)
+	{
+		WeaponComponent->UpdateWeaponInfo_Server(InWeaponData);
+
+		GetMesh()->GetAnimInstance()->LinkAnimClassLayers(InWeaponData->CharacterAnimClass);
+		PlayMontage_Multicast(InWeaponData->CharacterEquipMontage);
 	}
 }
 
@@ -289,49 +263,42 @@ void AHyperShooterCharacter::CrouchReleased_Multicast_Implementation()
 
 void AHyperShooterCharacter::DropWeapon_Server_Implementation()
 {
-	if (CurrentWeapon)
+	if (WeaponComponent->GetWeaponType() != EWeaponType::Pistol)
 	{
-		if (CurrentWeapon->GetWeaponType() != EWeaponType::Pistol)
-		{
-			// Drop Weapon
-			CurrentWeapon->DropWeaponFromOwner();
-			CurrentWeapon = nullptr;
+		// Drop Weapon
+		WeaponComponent->DropWeaponFromOwner();
 
-			// Spawn Default Weapon Again
-			SpawnDefaultWeapon_Server();
-		}
+		// Spawn Default Weapon Again
+		UpdateWeaponInfo_Server(DefaultWeaponData);
 	}
 }
 
 void AHyperShooterCharacter::FirePressed()
 {
-	if (CurrentWeapon)
+	if (WeaponComponent->HasEnoughAmmo())
 	{
-		if (CurrentWeapon->HasEnoughAmmo())
-		{
-			Fire_Server();
+		Fire_Server();
 
-			if (HUDWidget)
-			{
-				HUDWidget->PlayFireAnimation();
-			}
-		}
-		else
+		if (HUDWidget)
 		{
-			Reload_Server();
+			HUDWidget->PlayFireAnimation();
 		}
+	}
+	else
+	{
+		Reload_Server();
+	}
 
-		if (CurrentWeapon->CanAutoFire() && !GetWorldTimerManager().IsTimerActive(FireHandle))
-		{
-			GetWorldTimerManager().SetTimer(FireHandle, this,
-				&AHyperShooterCharacter::FirePressed, CurrentWeapon->GetFireLatency(), true);
-		}
+	if (WeaponComponent->CanAutoFire() && !GetWorldTimerManager().IsTimerActive(FireHandle))
+	{
+		GetWorldTimerManager().SetTimer(FireHandle, this,
+			&AHyperShooterCharacter::FirePressed, WeaponComponent->GetFireLatency(), true);
 	}
 }
 
 void AHyperShooterCharacter::PlayFireAnimationWithWeapon()
 {
-	PlayAnimMontage(CurrentWeapon->GetCharacterFireMontage());
+	PlayAnimMontage(WeaponComponent->GetCharacterFireMontage());
 
 	if (UHSAnimInstanceBase* animInst = Cast<UHSAnimInstanceBase>(GetMesh()->GetAnimInstance()))
 	{
@@ -340,7 +307,7 @@ void AHyperShooterCharacter::PlayFireAnimationWithWeapon()
 
 	if (HasAuthority())
 	{
-		CurrentWeapon->Fire_Server();
+		WeaponComponent->Fire_Server();
 	}
 }
 
@@ -348,43 +315,28 @@ void AHyperShooterCharacter::Fire_Server_Implementation()
 {
 	if (UHSAnimInstanceBase* animInst = Cast<UHSAnimInstanceBase>(GetMesh()->GetAnimInstance()))
 	{
-		if (CurrentWeapon)
-		{
-			Fire_Multicast();
-		}
+		Fire_Multicast();
 	}
 }
 
 void AHyperShooterCharacter::Fire_Multicast_Implementation()
 {
-	if (CurrentWeapon)
-	{
-		PlayFireAnimationWithWeapon();
-	}
+	PlayFireAnimationWithWeapon();
 }
 
 void AHyperShooterCharacter::FireReleased()
 {
-	if (CurrentWeapon)
-	{
-		FireReleased_Server();
-	}
+	FireReleased_Server();
 }
 
 void AHyperShooterCharacter::FireReleased_Server_Implementation()
 {
-	if (CurrentWeapon)
-	{
-		FireReleased_Multicast();
-	}
+	FireReleased_Multicast();
 }
 
 void AHyperShooterCharacter::FireReleased_Multicast_Implementation()
 {
-	if (CurrentWeapon)
-	{
-		GetWorldTimerManager().ClearTimer(FireHandle);
-	}
+	GetWorldTimerManager().ClearTimer(FireHandle);
 }
 
 void AHyperShooterCharacter::Reload_Server_Implementation()
@@ -394,13 +346,10 @@ void AHyperShooterCharacter::Reload_Server_Implementation()
 
 void AHyperShooterCharacter::Reload_Multicast_Implementation()
 {
-	if (CurrentWeapon)
+	if (GetCurrentMontage() != WeaponComponent->GetCharacterReloadMontage())
 	{
-		if (GetCurrentMontage() != CurrentWeapon->GetCharacterReloadMontage())
-		{
-			PlayAnimMontage(CurrentWeapon->GetCharacterReloadMontage());
-			CurrentWeapon->PlayReloadMontage();
-		}
+		PlayAnimMontage(WeaponComponent->GetCharacterReloadMontage());
+		WeaponComponent->PlayReloadMontage();
 	}
 }
 
@@ -475,9 +424,9 @@ void AHyperShooterCharacter::CharacterDied_Multicast_Implementation(EHSHitDirect
 
 void AHyperShooterCharacter::ReloadSuccess()
 {
-	if (HasAuthority() && CurrentWeapon)
+	if (HasAuthority())
 	{
-		CurrentWeapon->ReloadSuccess();
+		WeaponComponent->ReloadSuccess();
 	}
 }
 

@@ -17,6 +17,7 @@ class UHSWeaponData;
 struct FInputActionValue;
 class UHSCharacterStatusComponent;
 class UHSCameraModeComponent;
+class UHSWeaponComponent;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
@@ -84,6 +85,9 @@ class AHyperShooterCharacter : public ACharacter
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
 	UHSCameraModeComponent* CameraModeComponent;
 
+	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
+	UHSWeaponComponent* WeaponComponent;
+
 	/*
 		Default Weapon
 	*/
@@ -92,9 +96,6 @@ class AHyperShooterCharacter : public ACharacter
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Weapon, meta = (AllowPrivateAccess = "true"))
 	UHSWeaponData* DefaultWeaponData;
-
-	UPROPERTY(ReplicatedUsing = OnRep_CurrentWeapon, VisibleAnywhere, BlueprintReadOnly, Category = Weapon, meta = (AllowPrivateAccess = "true"))
-	AHSWeaponBase* CurrentWeapon;
 
 	UPROPERTY(EditAnywhere, Category = Dash)
 	float MaxWalkSpeed = 600.f;
@@ -142,17 +143,14 @@ protected:
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
 public:
+	void WeaponInfoUpdated();
+
+public:
 	UFUNCTION(NetMulticast, UnReliable, BlueprintCallable)
 	void PlayMontage_Multicast(UAnimMontage* InMontage);
 
 	UFUNCTION(Server, Reliable, BlueprintCallable)
-	void SpawnDefaultWeapon_Server();
-
-	UFUNCTION(Server, Reliable, BlueprintCallable)
 	void UpdateWeaponInfo_Server(UHSWeaponData* InWeaponData);
-
-	UFUNCTION()
-	void OnRep_CurrentWeapon();
 
 	UFUNCTION()
 	void OnAmmoUpdated(int MaxAmmo, int CurrentAmmo);

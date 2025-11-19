@@ -16,7 +16,7 @@
 #include "Components/WidgetComponent.h"
 #include "Component/HSInteractComponent.h"
 #include "HyperShooterCharacter.h"
-
+#include "Actor/Weapon/HSWeaponBase.h"
 
 // Sets default values for this component's properties
 UHSWeaponComponent::UHSWeaponComponent()
@@ -26,6 +26,19 @@ UHSWeaponComponent::UHSWeaponComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 
 	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(FName("Mesh"));
+}
+
+void UHSWeaponComponent::OnRegister()
+{
+	Super::OnRegister();
+
+	// TODO: BUGBUG: Work around the 'Template Mismatch during attachment. Attaching instanced component to template component.' problem.
+	// Remove after Epic acknowledges and fixes this long-standing bug or provides guidance.
+	// The constructor-initialized components, upon non-CDO instantiation/initialization, are getting CDO references for their attached parents, instead of instance references.
+	// A work-around...
+	//     - Use SetupAttachment(), per usual in the constructor to establish the parent-child relationship for CDOs.
+	//     - Use AttachToComponent() to override those errant CDO references with instance references, in your USceneComponent::OnRegister() override.
+
 	Mesh->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
 }
 
@@ -33,6 +46,8 @@ UHSWeaponComponent::UHSWeaponComponent()
 void UHSWeaponComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	InitializeWeaponData();
 
 	CurrentAmmo = MaxAmmo;
 	OnRep_Ammo();
@@ -49,6 +64,7 @@ void UHSWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	DOREPLIFETIME(UHSWeaponComponent, WeaponDataAsset);
 	DOREPLIFETIME_CONDITION(UHSWeaponComponent, MaxAmmo, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(UHSWeaponComponent, CurrentAmmo, COND_OwnerOnly);
 }
@@ -74,6 +90,15 @@ void UHSWeaponComponent::InitializeWeaponData()
 
 		TracerSystem = WeaponDataAsset->TracerSystem;
 
+		if (Mesh)
+		{
+			Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Mesh->SetSimulatePhysics(false);
+		}
+
+		SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
+		SetRelativeLocation(FVector::ZeroVector);
+
 		OnRep_Ammo();
 	}
 }
@@ -85,16 +110,12 @@ void UHSWeaponComponent::UpdateWeaponInfo_Multicast_Implementation(UHSWeaponData
 		WeaponDataAsset = InWeaponDataAsset;
 		InitializeWeaponData();
 	}
+
+	OnRep_WeaponDataAsset();
 }
 
 void UHSWeaponComponent::UpdateWeaponInfo_Server_Implementation(UHSWeaponData* InWeaponDataAsset)
 {
-	if (InWeaponDataAsset)
-	{
-		WeaponDataAsset = InWeaponDataAsset;
-		InitializeWeaponData();
-	}
-
 	UpdateWeaponInfo_Multicast(InWeaponDataAsset);
 }
 
@@ -219,25 +240,13 @@ void UHSWeaponComponent::ReloadSuccess()
 	}
 }
 
-void UHSWeaponComponent::AttachWeaponToCharacter(ACharacter* character)
-{
-	if (Mesh)
-	{
-		Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		Mesh->SetSimulatePhysics(false);
-	}
-
-	if (character)
-	{
-		AttachToComponent(character->GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, FName("weapon_r"));
-		SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
-		SetRelativeLocation(FVector::ZeroVector);
-	}
-}
-
 void UHSWeaponComponent::DropWeaponFromOwner()
 {
-
+	AHSWeaponBase* DroppedWeapon = GetWorld()->SpawnActor<AHSWeaponBase>(DropWeaponClass, GetComponentTransform());
+	if (DroppedWeapon)
+	{
+		DroppedWeapon->InitializeWeaponData(WeaponDataAsset);
+	}
 }
 
 EWeaponType UHSWeaponComponent::GetWeaponType() const
@@ -323,7 +332,7 @@ void UHSWeaponComponent::ShowShellEject()
 	{
 		if (!NC_ShellEject || !NC_ShellEject->IsActive())
 		{
-			FTransform transform = Mesh->GetSocketTransform(FName("ShellEject"), ERelativeTransformSpace::RTS_Actor);
+			FTransform transform = Mesh->GetSocketTransform(FName("ShellEject"), ERelativeTransformSpace::RTS_Component);
 
 			NC_ShellEject = UNiagaraFunctionLibrary::SpawnSystemAttached(ShellEjectSystem, Mesh, FName(),
 				transform.GetLocation(), FRotator(0.f, 90.f, 0.f),
@@ -345,7 +354,7 @@ void UHSWeaponComponent::ShowMuzzleFlash(FVector cameraLocation, FVector ImpactP
 	{
 		if (!NC_MuzzleFlash || !NC_MuzzleFlash->IsActive())
 		{
-			FTransform transform = Mesh->GetSocketTransform(FName("Muzzle"), ERelativeTransformSpace::RTS_Actor);
+			FTransform transform = Mesh->GetSocketTransform(FName("Muzzle"), ERelativeTransformSpace::RTS_Component);
 
 			NC_MuzzleFlash = UNiagaraFunctionLibrary::SpawnSystemAttached(MuzzleFlashSystem, Mesh, FName(),
 				transform.GetLocation(), FRotator(0.f, 90.f, 0.f),
@@ -369,7 +378,7 @@ void UHSWeaponComponent::ShowTracer(FVector cameraLocation, FVector ImpactPoint)
 	{
 		if (!NC_Tracer || !NC_Tracer->IsActive())
 		{
-			FTransform transform = Mesh->GetSocketTransform(FName("Muzzle"), ERelativeTransformSpace::RTS_Actor);
+			FTransform transform = Mesh->GetSocketTransform(FName("Muzzle"), ERelativeTransformSpace::RTS_Component);
 
 			NC_Tracer = UNiagaraFunctionLibrary::SpawnSystemAttached(TracerSystem, Mesh, FName(),
 				transform.GetLocation(), FRotator(0.f, 90.f, 0.f),
@@ -384,6 +393,11 @@ void UHSWeaponComponent::ShowTracer(FVector cameraLocation, FVector ImpactPoint)
 		TArray<FVector> array; array.Push(ImpactPoint);
 		UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(NC_Tracer, FName("User.ImpactPositions"), array);
 	}
+}
+
+void UHSWeaponComponent::OnRep_WeaponDataAsset()
+{
+	Delegate_OnWeaponUpdated.Broadcast();
 }
 
 void UHSWeaponComponent::OnRep_Ammo()
@@ -426,5 +440,15 @@ UAnimMontage* UHSWeaponComponent::GetCharacterReloadMontage() const
 	{
 		return WeaponDataAsset->CharacterReloadMontage;
 	}
+	return nullptr;
+}
+
+TSubclassOf<UUserWidget> UHSWeaponComponent::GetHUDClass() const
+{
+	if (WeaponDataAsset)
+	{
+		return WeaponDataAsset->HUDClass;
+	}
+
 	return nullptr;
 }

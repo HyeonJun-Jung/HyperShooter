@@ -8,11 +8,13 @@
 #include "HSWeaponComponent.generated.h"
 
 class UHSWeaponData;
+class AHSWeaponBase;
 class UNiagaraSystem;
 class UNiagaraComponent;
 class FLifetimeProperty;
 class UWidgetComponent;
 
+DECLARE_MULTICAST_DELEGATE(FOnWeaponUpdated);
 DECLARE_MULTICAST_DELEGATE(FOnTargetHit);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAmmoUpdated, int, int);
 
@@ -28,6 +30,7 @@ public:
 protected:
 	// Called when the game starts
 	virtual void BeginPlay() override;
+	virtual void OnRegister() override;
 
 public:	
 	// Called every frame
@@ -57,7 +60,6 @@ public:
 	void PlayReloadMontage();
 	void ReloadSuccess();
 
-	void AttachWeaponToCharacter(ACharacter* character);
 	void DropWeaponFromOwner();
 
 public:
@@ -82,6 +84,9 @@ protected:
 		Call back
 	*/
 protected:
+	UFUNCTION() 
+	void OnRep_WeaponDataAsset();
+
 	UFUNCTION()
 	void OnRep_Ammo();
 
@@ -92,20 +97,24 @@ protected:
 	void SpawnBulletHole_Multicast(FVector ImpactPoint, FVector ImpactNormal);
 
 public:
+	FOnWeaponUpdated Delegate_OnWeaponUpdated;
 	FOnAmmoUpdated Delegate_OnAmmoUpdated;
 	FOnTargetHit Delegate_OnTargetHit;
 
 public:
 	UAnimMontage* GetCharacterFireMontage() const;
 	UAnimMontage* GetCharacterReloadMontage() const;
-	TSubclassOf<UUserWidget> GetHUDClass() const { return WeaponHUDClass; }
+	TSubclassOf<UUserWidget> GetHUDClass() const;
 
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	UPROPERTY(ReplicatedUsing = OnRep_WeaponDataAsset, EditAnywhere, BlueprintReadOnly)
 	UHSWeaponData* WeaponDataAsset;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	USkeletalMeshComponent* Mesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	TSubclassOf<AHSWeaponBase> DropWeaponClass;
 
 	UPROPERTY(ReplicatedUsing = OnRep_Ammo, EditAnywhere, BlueprintReadOnly, Category = Ammo)
 	int MaxAmmo = 10;
@@ -171,9 +180,5 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = FX)
 	UNiagaraSystem* TracerSystem;
-
-protected:
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = UI)
-	TSubclassOf<UUserWidget> WeaponHUDClass;
 		
 };

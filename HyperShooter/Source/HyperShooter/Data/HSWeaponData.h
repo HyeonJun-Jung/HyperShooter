@@ -52,6 +52,12 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Performance)
 	UCurveFloat* RecoilYawCurve;
+
+	/*
+		HUD
+	*/
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Widget)
+	TSubclassOf<UUserWidget> HUDClass;
 	
 	/*
 		Mesh
