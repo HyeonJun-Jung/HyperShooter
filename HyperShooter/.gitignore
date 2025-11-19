@@ -75,9 +75,11 @@ Plugins/**/Intermediate/*
 DerivedDataCache/*
 
 # Custom
+Content/Audio/*
+Content/Lighting/*
 Content/HyperShooter/Assets/*
-Content/HyperShooter/UI/Assets/*
+Content/HyperShooter/UI/Asset/*
 Content/HyperShooter/Level/InfinityBladeGrassLands/*
 Content/HyperShooter/Characters/Mannequin_UE4/*
 Content/HyperShooter/Characters/Mannequins/*
-Content/HyperShooter/Characters/Heros/Mannequin/*
+Content/HyperShooter/Characters/Heroes/Mannequin/*
