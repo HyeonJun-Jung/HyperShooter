@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
+#include "Data/HSWeaponData.h"
 #include "HyperShooterCharacter.generated.h"
 
 class USpringArmComponent;
@@ -75,6 +76,16 @@ class AHyperShooterCharacter : public ACharacter
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* DropWeaponAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputAction* FirearmSwapAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputAction* GrenadeSwapAction;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	UInputAction* KnifeSwapAction;
+
 	
 	/*
 		Custom Components
@@ -143,6 +154,7 @@ protected:
 	virtual float TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
 public:
+	void WeaponStateUpdated(EWeaponState NewWeaponState);
 	void WeaponInfoUpdated();
 
 public:
@@ -183,6 +195,13 @@ protected:
 
 	UFUNCTION(NetMulticast, Reliable)
 	void CrouchReleased_Multicast();
+
+/*
+	Swap Weapon
+*/
+	void SwapWeapon_Firearm();
+	void SwapWeapon_Grenade();
+	void SwapWeapon_Knife();
 
 /*
 	Drop Weapon

@@ -6,9 +6,6 @@
 #include "Animation/AnimInstance.h"
 #include "HSAnimInstanceBase.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class HYPERSHOOTER_API UHSAnimInstanceBase : public UAnimInstance
 {
@@ -24,6 +21,12 @@ public:
 protected:
 	UFUNCTION()
 	void AnimNotify_ReloadSuccess();
+
+	UFUNCTION()
+	void AnimNotify_ThrowGrenade();
+
+	UFUNCTION()
+	void AnimNotify_GrenadeEnd();
 
 protected:
 	void UpdatePitchOffset();

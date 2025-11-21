@@ -74,6 +74,11 @@ AHyperShooterCharacter::AHyperShooterCharacter()
 
 void AHyperShooterCharacter::BeginPlay()
 {
+	// Component's BeginPlay are Called on AActor::BeginPlay().
+	// Bind Delegate Before Component's BeginPlay Called
+	WeaponComponent->Delegate_OnWeaponStateUpdated.AddUObject(this, &AHyperShooterCharacter::WeaponStateUpdated);
+	WeaponComponent->Delegate_OnWeaponUpdated.AddUObject(this, &AHyperShooterCharacter::WeaponInfoUpdated);
+
 	// Call the base class  
 	Super::BeginPlay();
 
@@ -86,9 +91,16 @@ void AHyperShooterCharacter::BeginPlay()
 		}
 	}
 
-	WeaponComponent->Delegate_OnWeaponUpdated.AddUObject(this, &AHyperShooterCharacter::WeaponInfoUpdated);
+	if (HasAuthority())
+	{
+		UpdateWeaponInfo_Server(DefaultWeaponData);
+	}
 
-	UpdateWeaponInfo_Server(DefaultWeaponData);
+	if (!HasAuthority())
+	{
+		WeaponInfoUpdated();
+		UE_LOG(LogTemplateCharacter, Warning, TEXT("BeginPlay is called on Client!"));
+	}
 }
 
 void AHyperShooterCharacter::Destroyed()
@@ -153,21 +165,6 @@ float AHyperShooterCharacter::TakeDamage(float Damage, FDamageEvent const& Damag
 	return Damage;
 }
 
-void AHyperShooterCharacter::WeaponInfoUpdated()
-{
-	if (IsLocallyControlled())
-	{
-		APlayerController* PC = Cast<APlayerController>(GetController());
-		HUDWidget = CreateWidget<UWidget_HUD>(PC, WeaponComponent->GetHUDClass());
-		if (HUDWidget)
-		{
-			HUDWidget->AddToViewport();
-		}
-
-		WeaponComponent->Delegate_OnTargetHit.AddUObject(this, &AHyperShooterCharacter::OnFireHit);
-	}
-}
-
 void AHyperShooterCharacter::PlayMontage_Multicast_Implementation(UAnimMontage* InMontage)
 {
 	PlayAnimMontage(InMontage);
@@ -178,9 +175,35 @@ void AHyperShooterCharacter::UpdateWeaponInfo_Server_Implementation(UHSWeaponDat
 	if (WeaponComponent && InWeaponData)
 	{
 		WeaponComponent->UpdateWeaponInfo_Server(InWeaponData);
+	}
+}
 
-		GetMesh()->GetAnimInstance()->LinkAnimClassLayers(InWeaponData->CharacterAnimClass);
-		PlayMontage_Multicast(InWeaponData->CharacterEquipMontage);
+void AHyperShooterCharacter::WeaponStateUpdated(EWeaponState NewWeaponState)
+{
+	PlayAnimMontage(WeaponComponent->GetCharacterEquipMontage());
+}
+
+void AHyperShooterCharacter::WeaponInfoUpdated()
+{
+	GetMesh()->GetAnimInstance()->LinkAnimClassLayers(WeaponComponent->GetWeaponData()->CharacterAnimClass);
+	PlayAnimMontage(WeaponComponent->GetCharacterEquipMontage());
+
+	if (IsLocallyControlled())
+	{
+		APlayerController* PC = Cast<APlayerController>(GetController());
+
+		if (HUDWidget)
+		{
+			HUDWidget->RemoveFromParent();
+		}
+
+		HUDWidget = CreateWidget<UWidget_HUD>(PC, WeaponComponent->GetHUDClass());
+		if (HUDWidget)
+		{
+			HUDWidget->AddToViewport();
+		}
+
+		WeaponComponent->Delegate_OnTargetHit.AddUObject(this, &AHyperShooterCharacter::OnFireHit);
 	}
 }
 
@@ -260,6 +283,21 @@ void AHyperShooterCharacter::CrouchReleased_Multicast_Implementation()
 	}
 }
 
+void AHyperShooterCharacter::SwapWeapon_Firearm()
+{
+	WeaponComponent->SwapWeapon_Server(EWeaponState::Firearm);
+}
+
+void AHyperShooterCharacter::SwapWeapon_Grenade()
+{
+	WeaponComponent->SwapWeapon_Server(EWeaponState::Grenade);
+}
+
+void AHyperShooterCharacter::SwapWeapon_Knife()
+{
+	// WeaponComponent->SwapWeapon_Server(EWeaponState::Knife);
+}
+
 
 void AHyperShooterCharacter::DropWeapon_Server_Implementation()
 {
@@ -279,7 +317,7 @@ void AHyperShooterCharacter::FirePressed()
 	{
 		Fire_Server();
 
-		if (HUDWidget)
+		if (HUDWidget && WeaponComponent->GetWeaponState() == EWeaponState::Firearm)
 		{
 			HUDWidget->PlayFireAnimation();
 		}
@@ -289,11 +327,27 @@ void AHyperShooterCharacter::FirePressed()
 		Reload_Server();
 	}
 
-	if (WeaponComponent->CanAutoFire() && !GetWorldTimerManager().IsTimerActive(FireHandle))
+	if (WeaponComponent->GetWeaponState() == EWeaponState::Firearm)
 	{
-		GetWorldTimerManager().SetTimer(FireHandle, this,
-			&AHyperShooterCharacter::FirePressed, WeaponComponent->GetFireLatency(), true);
+		if (WeaponComponent->CanAutoFire() && !GetWorldTimerManager().IsTimerActive(FireHandle))
+		{
+			GetWorldTimerManager().SetTimer(FireHandle, this,
+				&AHyperShooterCharacter::FirePressed, WeaponComponent->GetFireLatency(), true);
+		}
 	}
+}
+
+void AHyperShooterCharacter::Fire_Server_Implementation()
+{
+	if (UHSAnimInstanceBase* animInst = Cast<UHSAnimInstanceBase>(GetMesh()->GetAnimInstance()))
+	{
+		Fire_Multicast();
+	}
+}
+
+void AHyperShooterCharacter::Fire_Multicast_Implementation()
+{
+	PlayFireAnimationWithWeapon();
 }
 
 void AHyperShooterCharacter::PlayFireAnimationWithWeapon()
@@ -309,19 +363,6 @@ void AHyperShooterCharacter::PlayFireAnimationWithWeapon()
 	{
 		WeaponComponent->Fire_Server();
 	}
-}
-
-void AHyperShooterCharacter::Fire_Server_Implementation()
-{
-	if (UHSAnimInstanceBase* animInst = Cast<UHSAnimInstanceBase>(GetMesh()->GetAnimInstance()))
-	{
-		Fire_Multicast();
-	}
-}
-
-void AHyperShooterCharacter::Fire_Multicast_Implementation()
-{
-	PlayFireAnimationWithWeapon();
 }
 
 void AHyperShooterCharacter::FireReleased()
@@ -460,6 +501,11 @@ void AHyperShooterCharacter::SetupPlayerInputComponent(UInputComponent* PlayerIn
 		// Crouch
 		EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Started, this, &AHyperShooterCharacter::CrouchPressed_Server);
 		EnhancedInputComponent->BindAction(CrouchAction, ETriggerEvent::Completed, this, &AHyperShooterCharacter::CrouchReleased_Server);
+
+		// Swap Weapon
+		EnhancedInputComponent->BindAction(FirearmSwapAction, ETriggerEvent::Started, this, &AHyperShooterCharacter::SwapWeapon_Firearm);
+		EnhancedInputComponent->BindAction(GrenadeSwapAction, ETriggerEvent::Started, this, &AHyperShooterCharacter::SwapWeapon_Grenade);
+		EnhancedInputComponent->BindAction(KnifeSwapAction, ETriggerEvent::Started, this, &AHyperShooterCharacter::SwapWeapon_Knife);
 
 		// Drop Weapon
 		EnhancedInputComponent->BindAction(DropWeaponAction, ETriggerEvent::Started, this, &AHyperShooterCharacter::DropWeapon_Server);

@@ -17,6 +17,7 @@
 #include "Components/WidgetComponent.h"
 #include "Component/HSInteractComponent.h"
 #include "HyperShooterCharacter.h"
+#include "UI/Weapon/Widget_DroppedWeapon.h"
 
 // Sets default values
 AHSWeaponBase::AHSWeaponBase()
@@ -85,6 +86,11 @@ void AHSWeaponBase::ShowInteractiveUI_Implementation(UHSInteractComponent* Inter
 	if (WidgetComponent)
 	{
 		WidgetComponent->SetVisibility(true);
+
+		if (UWidget_DroppedWeapon* widget = Cast<UWidget_DroppedWeapon>(WidgetComponent->GetWidget()))
+		{
+			widget->UpdateWeaponInfo(WeaponDataAsset);
+		}
 	}
 }
 

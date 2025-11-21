@@ -64,6 +64,7 @@ void UHSWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	DOREPLIFETIME(UHSWeaponComponent, CurrentWeaponState);
 	DOREPLIFETIME(UHSWeaponComponent, WeaponDataAsset);
 	DOREPLIFETIME_CONDITION(UHSWeaponComponent, MaxAmmo, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(UHSWeaponComponent, CurrentAmmo, COND_OwnerOnly);
@@ -103,23 +104,49 @@ void UHSWeaponComponent::InitializeWeaponData()
 	}
 }
 
-void UHSWeaponComponent::UpdateWeaponInfo_Multicast_Implementation(UHSWeaponData* InWeaponDataAsset)
+void UHSWeaponComponent::UpdateWeaponInfo_Server_Implementation(UHSWeaponData* InWeaponDataAsset)
 {
 	if (InWeaponDataAsset)
 	{
 		WeaponDataAsset = InWeaponDataAsset;
-		InitializeWeaponData();
+		OnRep_WeaponDataAsset();
 	}
-
-	OnRep_WeaponDataAsset();
 }
 
-void UHSWeaponComponent::UpdateWeaponInfo_Server_Implementation(UHSWeaponData* InWeaponDataAsset)
+void UHSWeaponComponent::SwapWeapon_Server_Implementation(EWeaponState InWeaponState)
 {
-	UpdateWeaponInfo_Multicast(InWeaponDataAsset);
+	if (CurrentWeaponState != InWeaponState)
+	{
+		CurrentWeaponState = InWeaponState;
+		OnRep_WeaponState();
+	}
 }
 
 void UHSWeaponComponent::Fire_Server_Implementation()
+{
+	switch (CurrentWeaponState)
+	{
+		case EWeaponState::Firearm:
+		{
+			Fire_Firearm_Server();
+			break;
+		}
+
+		case EWeaponState::Grenade:
+		{
+			Fire_Grenade_Server();
+			break;
+		}
+
+		case EWeaponState::Knife:
+		{
+			Fire_Knife_Server();
+			break;
+		}
+	}
+}
+
+void UHSWeaponComponent::Fire_Firearm_Server_Implementation()
 {
 	CurrentAmmo--;
 	OnRep_Ammo();
@@ -207,6 +234,17 @@ void UHSWeaponComponent::Fire_Server_Implementation()
 	}
 }
 
+void UHSWeaponComponent::Fire_Grenade_Server_Implementation()
+{
+
+}
+
+void UHSWeaponComponent::Fire_Knife_Server_Implementation()
+{
+
+}
+
+
 void UHSWeaponComponent::Fire_Multicast_Implementation(FVector CameraLocation, FVector ImpactPoint)
 {
 	if (WeaponDataAsset)
@@ -218,6 +256,22 @@ void UHSWeaponComponent::Fire_Multicast_Implementation(FVector CameraLocation, F
 	ShowShellEject();
 	ShowMuzzleFlash(CameraLocation, ImpactPoint);
 	ShowTracer(CameraLocation, ImpactPoint);
+}
+
+void UHSWeaponComponent::ThrowGrenade()
+{
+	if (SpawnedGrenade && GetOwner()->HasAuthority())
+	{
+		SpawnedGrenade->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		
+		UCameraComponent* camera = GetOwner()->GetComponentByClass<UCameraComponent>();
+		if (UStaticMeshComponent* mesh = SpawnedGrenade->GetComponentByClass<UStaticMeshComponent>())
+		{
+			mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			mesh->SetSimulatePhysics(true);
+			mesh->AddImpulse(camera->GetForwardVector() * 500.f);
+		}
+	}
 }
 
 void UHSWeaponComponent::PlayReloadMontage()
@@ -395,8 +449,44 @@ void UHSWeaponComponent::ShowTracer(FVector cameraLocation, FVector ImpactPoint)
 	}
 }
 
+void UHSWeaponComponent::OnRep_WeaponState()
+{
+	Delegate_OnWeaponStateUpdated.Broadcast(CurrentWeaponState);
+
+	switch (CurrentWeaponState)
+	{
+		case EWeaponState::Firearm:
+		{
+			Mesh->SetVisibility(true);
+
+			break;
+		}
+		case EWeaponState::Grenade:
+		{
+			ACharacter* character = Cast<ACharacter>(GetOwner());
+			if (character && character->HasAuthority())
+			{
+				SpawnedGrenade = GetWorld()->SpawnActor<AActor>(GrenadeClass, FTransform::Identity);
+				if (SpawnedGrenade)
+				{
+					SpawnedGrenade->AttachToComponent(character->GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, FName("weapon_grenade"));
+				}
+			}
+
+			Mesh->SetVisibility(false);
+
+			break;
+		}
+		case EWeaponState::Knife:
+		{
+			break;
+		}
+	}
+}
+
 void UHSWeaponComponent::OnRep_WeaponDataAsset()
 {
+	InitializeWeaponData();
 	Delegate_OnWeaponUpdated.Broadcast();
 }
 
@@ -425,11 +515,59 @@ void UHSWeaponComponent::TargetHitSuccessed_Client_Implementation()
 	Delegate_OnTargetHit.Broadcast();
 }
 
+UAnimMontage* UHSWeaponComponent::GetCharacterEquipMontage() const
+{
+	switch (CurrentWeaponState)
+	{
+		case EWeaponState::Firearm:
+		{
+			if (WeaponDataAsset)
+			{
+				return WeaponDataAsset->CharacterEquipMontage;
+			}
+
+			break;
+		}
+
+		case EWeaponState::Grenade:
+		{
+			return Montage_GrenadeThrowLoop;
+			break;
+		}
+
+		case EWeaponState::Knife:
+		{
+			break;
+		}
+	}
+
+	return nullptr;
+}
+
 UAnimMontage* UHSWeaponComponent::GetCharacterFireMontage() const
 {
-	if (WeaponDataAsset)
+	switch (CurrentWeaponState)
 	{
-		return WeaponDataAsset->CharacterFireMontage;
+		case EWeaponState::Firearm:
+		{
+			if (WeaponDataAsset)
+			{
+				return WeaponDataAsset->CharacterFireMontage;
+			}
+
+			break;
+		}
+
+		case EWeaponState::Grenade:
+		{
+			return Montage_GrenadeThrow;
+			break;
+		}
+
+		case EWeaponState::Knife:
+		{
+			break;
+		}
 	}
 	return nullptr;
 }

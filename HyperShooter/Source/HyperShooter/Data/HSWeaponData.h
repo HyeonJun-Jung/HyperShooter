@@ -10,6 +10,14 @@
 class UNiagaraSystem;
 
 UENUM(BlueprintType)
+enum EWeaponState
+{
+	Firearm,
+	Grenade,
+	Knife
+};
+
+UENUM(BlueprintType)
 enum EWeaponType
 {
 	Pistol,
@@ -58,6 +66,12 @@ public:
 	*/
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Widget)
 	TSubclassOf<UUserWidget> HUDClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Widget)
+	FName WeaponName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Widget)
+	FText WeaponDescription;
 	
 	/*
 		Mesh

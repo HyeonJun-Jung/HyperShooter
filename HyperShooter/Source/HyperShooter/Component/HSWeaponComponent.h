@@ -14,6 +14,7 @@ class UNiagaraComponent;
 class FLifetimeProperty;
 class UWidgetComponent;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnWeaponStateUpdated, EWeaponState);
 DECLARE_MULTICAST_DELEGATE(FOnWeaponUpdated);
 DECLARE_MULTICAST_DELEGATE(FOnTargetHit);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnAmmoUpdated, int, int);
@@ -48,11 +49,23 @@ public:
 	UFUNCTION(Server, Reliable)
 	void UpdateWeaponInfo_Server(UHSWeaponData* InWeaponDataAsset);
 
-	UFUNCTION(NetMulticast, Reliable)
-	void UpdateWeaponInfo_Multicast(UHSWeaponData* InWeaponDataAsset);
+	UFUNCTION(Server, Reliable)
+	void SwapWeapon_Server(EWeaponState InWeaponState);
 
 	UFUNCTION(Server, Reliable)
 	void Fire_Server();
+
+	UFUNCTION(Server, Reliable)
+	void Fire_Firearm_Server();
+
+	UFUNCTION(Server, Reliable)
+	void Fire_Grenade_Server();
+
+	UFUNCTION()
+	void ThrowGrenade();
+
+	UFUNCTION(Server, Reliable)
+	void Fire_Knife_Server();
 
 	UFUNCTION(NetMulticast, Reliable)
 	void Fire_Multicast(FVector CameraLocation, FVector ImpactPoint);
@@ -84,6 +97,9 @@ protected:
 		Call back
 	*/
 protected:
+	UFUNCTION()
+	void OnRep_WeaponState();
+
 	UFUNCTION() 
 	void OnRep_WeaponDataAsset();
 
@@ -97,16 +113,23 @@ protected:
 	void SpawnBulletHole_Multicast(FVector ImpactPoint, FVector ImpactNormal);
 
 public:
+	FOnWeaponStateUpdated Delegate_OnWeaponStateUpdated;
 	FOnWeaponUpdated Delegate_OnWeaponUpdated;
 	FOnAmmoUpdated Delegate_OnAmmoUpdated;
 	FOnTargetHit Delegate_OnTargetHit;
 
 public:
+	EWeaponState GetWeaponState() const { return CurrentWeaponState; }
+	const UHSWeaponData* GetWeaponData() const { return WeaponDataAsset; }
+	UAnimMontage* GetCharacterEquipMontage() const;
 	UAnimMontage* GetCharacterFireMontage() const;
 	UAnimMontage* GetCharacterReloadMontage() const;
 	TSubclassOf<UUserWidget> GetHUDClass() const;
 
 protected:
+	UPROPERTY(ReplicatedUsing = OnRep_WeaponState, VisibleAnywhere, BlueprintReadOnly)
+	TEnumAsByte<EWeaponState> CurrentWeaponState;
+
 	UPROPERTY(ReplicatedUsing = OnRep_WeaponDataAsset, EditAnywhere, BlueprintReadOnly)
 	UHSWeaponData* WeaponDataAsset;
 
@@ -146,7 +169,9 @@ protected:
 	UPROPERTY()
 	FVector2D TargetRecoilOffset;
 
-
+/*
+	FX
+*/
 protected:
 	UPROPERTY()
 	UNiagaraComponent* NC_ShellEject;
@@ -180,5 +205,21 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = FX)
 	UNiagaraSystem* TracerSystem;
+
+/*	
+	Grenade
+*/
+protected:
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Grenade)
+	TSubclassOf<AActor> GrenadeClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Grenade)
+	UAnimMontage* Montage_GrenadeThrowLoop;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Grenade)
+	UAnimMontage* Montage_GrenadeThrow;
+
+	UPROPERTY()
+	AActor* SpawnedGrenade;
 		
 };

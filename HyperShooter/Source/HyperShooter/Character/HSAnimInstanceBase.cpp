@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Component/HSWeaponComponent.h"
 #include "HyperShooterCharacter.h"
 
 UHSAnimInstanceBase::UHSAnimInstanceBase()
@@ -54,6 +55,28 @@ void UHSAnimInstanceBase::AnimNotify_ReloadSuccess()
 	if (AHyperShooterCharacter* HSCharacter = Cast<AHyperShooterCharacter>(Character))
 	{
 		HSCharacter->ReloadSuccess();
+	}
+}
+
+void UHSAnimInstanceBase::AnimNotify_ThrowGrenade()
+{
+	if (Character && Character->HasAuthority())
+	{
+		if (UHSWeaponComponent* weaponComponent = Character->GetComponentByClass<UHSWeaponComponent>())
+		{
+			weaponComponent->ThrowGrenade();
+		}
+	}
+}
+
+void UHSAnimInstanceBase::AnimNotify_GrenadeEnd()
+{
+	if (Character && Character->HasAuthority())
+	{
+		if (UHSWeaponComponent* weaponComponent = Character->GetComponentByClass<UHSWeaponComponent>())
+		{
+			weaponComponent->SwapWeapon_Server(EWeaponState::Firearm);
+		}
 	}
 }
 
